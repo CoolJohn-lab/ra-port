@@ -320,6 +320,10 @@ typedef struct tagBITMAPINFO {
 	RGBQUAD bmiColors[1];
 } BITMAPINFO, *LPBITMAPINFO;
 
+enum {
+	RA_CS_INITIALIZED = 0x52414353 /* 'RACS'; heap garbage must not look initialized */
+};
+
 typedef struct _RTL_CRITICAL_SECTION {
 	pthread_mutex_t mutex;
 	int initialized;
@@ -1332,33 +1336,33 @@ static inline BOOL SetThreadPriority(HANDLE, int) { return TRUE; }
 
 static inline void InitializeCriticalSection(LPCRITICAL_SECTION section)
 {
-	if (!section || section->initialized) return;
+	if (!section || section->initialized == RA_CS_INITIALIZED) return;
 	pthread_mutexattr_t attr;
 	pthread_mutexattr_init(&attr);
 	pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
 	pthread_mutex_init(&section->mutex, &attr);
 	pthread_mutexattr_destroy(&attr);
-	section->initialized = TRUE;
+	section->initialized = RA_CS_INITIALIZED;
 }
 
 static inline void EnterCriticalSection(LPCRITICAL_SECTION section)
 {
 	if (!section) return;
-	if (!section->initialized) InitializeCriticalSection(section);
+	if (section->initialized != RA_CS_INITIALIZED) InitializeCriticalSection(section);
 	pthread_mutex_lock(&section->mutex);
 }
 
 static inline void LeaveCriticalSection(LPCRITICAL_SECTION section)
 {
-	if (!section || !section->initialized) return;
+	if (!section || section->initialized != RA_CS_INITIALIZED) return;
 	pthread_mutex_unlock(&section->mutex);
 }
 
 static inline void DeleteCriticalSection(LPCRITICAL_SECTION section)
 {
-	if (!section || !section->initialized) return;
+	if (!section || section->initialized != RA_CS_INITIALIZED) return;
 	pthread_mutex_destroy(&section->mutex);
-	section->initialized = FALSE;
+	section->initialized = 0;
 }
 
 static inline int stricmp(char const *left, char const *right) { return strcasecmp(left, right); }
