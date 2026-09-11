@@ -9,6 +9,9 @@
  */
 
 #include	"function.h"
+#if defined(RA_LINUX)
+#include "mac_sdl_runtime.h"
+#endif
 
 /*
 **	This is the holding buffer for the text overlap list. This buffer must be in the near
@@ -231,6 +234,9 @@ void HelpClass::Help_Text(int text, int x, int y, int color, bool quick)
 void HelpClass::Draw_It(bool forced)
 {
 	TabClass::Draw_It(forced);
+#if defined(RA_LINUX)
+    MacSDL_NativeHelp(0, 0, 0, 0);
+#endif
 
 	forced = false;		// TCTCTCTC
 	if (Text != TXT_NONE && (forced || !CountDownTimer)) {
@@ -248,6 +254,10 @@ void HelpClass::Draw_It(bool forced)
 				LogicPage->Draw_Rect(DrawX-1, DrawY+FontHeight, DrawX+width+1, DrawY+FontHeight+FontHeight-1, Color);
 				LogicPage->Draw_Line(DrawX, DrawY+FontHeight, DrawX+min(width+1, Width)-1, DrawY+FontHeight, BLACK);
 			}
+#if defined(RA_LINUX)
+            if (IsRight) MacSDL_NativeHelp(DrawX-1, DrawY-1, Width+3,
+                FontHeight*(Cost ? 2 : 1)+2);
+#endif
 			LogicPage->Unlock();
 		}
 	}

@@ -165,6 +165,7 @@ set(RA95_GNU_COMPILE_OPTIONS
 )
 
 set(RA95_CODE_QUOTE_SOURCES
+    "${RA95_REPO_ROOT}/PORT/MAC/src/native_game_view.cpp"
     "${RA95_REPO_ROOT}/PORT/MAC/src/legacy_primitives.cpp"
     "${RA95_REPO_ROOT}/PORT/MAC/src/legacy_ops.cpp"
 )

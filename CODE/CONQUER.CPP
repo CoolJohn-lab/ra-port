@@ -26,6 +26,10 @@ B<A> test;
 
 
 #include	"function.h"
+#if defined(RA_LINUX)
+#include "native_game_view.h"
+#include "mac_sdl_runtime.h"
+#endif
 #ifdef WIN32
 #ifdef WINSOCK_IPX
 #include	"WSProto.h"
@@ -214,6 +218,9 @@ void Main_Game(int argc, char * argv[])
 		}
 #endif	//WIN32
 
+#if defined(RA_LINUX)
+        NativeView_Session(true);
+#endif
 #ifdef SCENARIO_EDITOR
 		/*
 		**	Scenario-editor version of main-loop processing
@@ -234,6 +241,10 @@ void Main_Game(int argc, char * argv[])
 				}
 
 				if (SpecialDialog != SDLG_NONE) {
+#if defined(RA_LINUX)
+                    NativeView_Suspend();
+                    Map.Render();
+#endif
 					switch (SpecialDialog) {
 						case SDLG_SPECIAL:
 							Map.Help_Text(TXT_NONE);
@@ -299,6 +310,10 @@ void Main_Game(int argc, char * argv[])
 			**	Main_Loop(), allowing the game to run in the background.
 			*/
 			if (SpecialDialog != SDLG_NONE) {
+#if defined(RA_LINUX)
+                    NativeView_Suspend();
+                    Map.Render();
+#endif
 				switch (SpecialDialog) {
 					case SDLG_SPECIAL:
 						Map.Help_Text(TXT_NONE);
@@ -381,6 +396,9 @@ void Main_Game(int argc, char * argv[])
 		** (Skip this step if we're in playback mode; the modem or net won't have
 		** been initialized in that case.)
 		*/
+#if defined(RA_LINUX)
+        NativeView_Session(false);
+#endif
 		if (Session.Record || Session.Play) {
 			Session.RecordFile.Close();
 		}
@@ -2764,6 +2782,9 @@ extern GraphicBufferClass VQ640;
 #endif
 void Play_Movie(char const * name, ThemeType theme, bool clrscrn)
 	{
+#if defined(RA_LINUX)
+    NativeViewMovieScope native_movie_scope;
+#endif
 	#ifdef MPEGMOVIE
 	//theme = theme;
 	//clrscrn = clrscrn;

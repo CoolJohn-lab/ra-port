@@ -25,22 +25,22 @@ This is an unofficial source port based on the source code Electronic Arts relea
 
 ## Current Status
 
-| Status | Feature | Notes |
-| --- | --- | --- |
-| :white_check_mark: | macOS on Apple Silicon | Builds and runs with CMake/Ninja. |
-| :white_check_mark: | Linux on Ubuntu | Builds and runs as a native SDL2 desktop executable. |
-| :white_check_mark: | Android debug APK | Builds a local landscape APK for arm64-v8a devices and emulators. |
-| :white_check_mark: | iOS debug app | Builds a landscape simulator/device app with CMake/Xcode. |
-| :white_check_mark: | Campaign | Allied and Soviet campaigns are fully working. |
-| :white_check_mark: | Skirmish | Local skirmish is fully working. |
-| :white_check_mark: | Videos | Videos are playing with sound. |
-| :white_check_mark: | Controls and audio | macOS keyboard/mouse plus Android and iOS touch/audio work. |
-| :x: | Online/network multiplayer | Not wired up yet. |
-| :x: | Launcher/setup tools | Not ported. |
-| :x: | Expansion packs | Not a focus yet. |
-| :x: | `.app` bundle | Not packaged yet; the build creates a normal macOS executable. |
-| :x: | Android release build | Only local debug APKs are supported right now. |
-| :x: | iOS release build | Only local debug simulator/device builds are supported right now. |
+| Status             | Feature                    | Notes                                                             |
+| ------------------ | -------------------------- | ----------------------------------------------------------------- |
+| :white_check_mark: | macOS on Apple Silicon     | Builds and runs with CMake/Ninja.                                 |
+| :white_check_mark: | Linux on Ubuntu            | Builds and runs as a native SDL2 desktop executable.              |
+| :white_check_mark: | Android debug APK          | Builds a local landscape APK for arm64-v8a devices and emulators. |
+| :white_check_mark: | iOS debug app              | Builds a landscape simulator/device app with CMake/Xcode.         |
+| :white_check_mark: | Campaign                   | Allied and Soviet campaigns are fully working.                    |
+| :white_check_mark: | Skirmish                   | Local skirmish is fully working.                                  |
+| :white_check_mark: | Videos                     | Videos are playing with sound.                                    |
+| :white_check_mark: | Controls and audio         | macOS keyboard/mouse plus Android and iOS touch/audio work.       |
+| :x:                | Online/network multiplayer | Not wired up yet.                                                 |
+| :x:                | Launcher/setup tools       | Not ported.                                                       |
+| :x:                | Expansion packs            | Not a focus yet.                                                  |
+| :x:                | `.app` bundle              | Not packaged yet; the build creates a normal macOS executable.    |
+| :x:                | Android release build      | Only local debug APKs are supported right now.                    |
+| :x:                | iOS release build          | Only local debug simulator/device builds are supported right now. |
 
 ## Quick Start
 
@@ -154,6 +154,9 @@ Run from the repository root:
 ```sh
 scripts/run_linux_dev.sh
 ```
+
+Linux gameplay supports a [native window-sized battlefield, middle-drag panning,
+wheel zoom and optional lighting](docs/linux-camera.md).
 
 For headless smoke validation, install Xvfb and ImageMagick, then capture the title/menu:
 
@@ -328,18 +331,18 @@ tests/run_script_tests.sh
 
 ## Project Layout
 
-| Path | Purpose |
-| --- | --- |
-| `CODE/` | Main Red Alert game code |
-| `PORT/MAC/` | Shared desktop runtime, compatibility shims, SDL2 integration |
-| `PORT/ANDROID/` | Android entrypoint and platform-specific resource setup |
-| `PORT/IOS/` | iOS entrypoint and writable sandbox resource setup |
-| `android/` | Gradle Android app that builds the debug APK |
-| `ios/` | CMake/Xcode iOS app target |
-| `WIN32LIB/`, `WINVQ/` | Legacy support libraries used by the port |
-| `scripts/` | Asset preparation, run helpers, smoke capture, Linux include overlay generation |
-| `tests/` | Focused source-level and shim tests |
-| `docs/images/` | README images only, not game data |
+| Path                  | Purpose                                                                         |
+| --------------------- | ------------------------------------------------------------------------------- |
+| `CODE/`               | Main Red Alert game code                                                        |
+| `PORT/MAC/`           | Shared desktop runtime, compatibility shims, SDL2 integration                   |
+| `PORT/ANDROID/`       | Android entrypoint and platform-specific resource setup                         |
+| `PORT/IOS/`           | iOS entrypoint and writable sandbox resource setup                              |
+| `android/`            | Gradle Android app that builds the debug APK                                    |
+| `ios/`                | CMake/Xcode iOS app target                                                      |
+| `WIN32LIB/`, `WINVQ/` | Legacy support libraries used by the port                                       |
+| `scripts/`            | Asset preparation, run helpers, smoke capture, Linux include overlay generation |
+| `tests/`              | Focused source-level and shim tests                                             |
+| `docs/images/`        | README images only, not game data                                               |
 
 ## Contributing
 

@@ -9,6 +9,9 @@
  */
 
 #include	"function.h"
+#if defined(RA_LINUX)
+#include "native_game_view.h"
+#endif
 
 
 /***************************************************************************
@@ -2792,7 +2795,15 @@ bool TechnoClass::Electric_Zap(TARGET target, int which, COORDINATE source_coord
 		x1 += Map.TacPixelX;
 		y += Map.TacPixelY;
 		y1 += Map.TacPixelY;
-		Set_Logic_Page(SeenBuff);
+#if defined(RA_LINUX)
+        if (NativeView_Active()) {
+            x -= Map.TacPixelX; x1 -= Map.TacPixelX;
+            y -= Map.TacPixelY; y1 -= Map.TacPixelY;
+            Set_Logic_Page(HidPage);
+            NativeView_Tesla(dest);
+        } else
+#endif
+        Set_Logic_Page(SeenBuff);
 		gonnadraw = true;
 	}
 
@@ -2870,6 +2881,14 @@ bool TechnoClass::Electric_Zap(TARGET target, int which, COORDINATE source_coord
 		}
 	}
 
+#if defined(RA_LINUX)
+    if (gonnadraw && NativeView_Active()) {
+        NativeView_Present();
+        // The bolt was drawn directly into retained world pixels. Erase it on
+        // the next frame, as the original SeenBuff-only path did automatically.
+        Map.Flag_To_Redraw(true);
+    }
+#endif
 	return (gonnadraw);
 }
 

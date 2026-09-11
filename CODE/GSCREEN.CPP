@@ -9,6 +9,10 @@
  */
 
 #include "function.h"
+#if defined(RA_LINUX)
+#include "native_game_view.h"
+#include "mac_sdl_runtime.h"
+#endif
 
 
 GadgetClass * GScreenClass::Buttons = 0;
@@ -234,6 +238,9 @@ void GScreenClass::Flag_To_Redraw(bool complete)
  *=============================================================================================*/
 void GScreenClass::Input(KeyNumType & key, int & x, int & y)
 {
+#if defined(RA_LINUX)
+    NativeView_Update();
+#endif
 	key = Keyboard->Check();
 
 	x = Keyboard->Mouse_X();
@@ -353,6 +360,9 @@ void GScreenClass::Remove_A_Button(GadgetClass & gadget)
  *=============================================================================================*/
 void GScreenClass::Render(void)
 {
+#if defined(RA_LINUX)
+    NativeView_Update();
+#endif
 	//This is unnessasary surely?	ST - 10/16/96 2:30PM
 	//if (Buttons && Buttons->Is_List_To_Redraw()) {
 	//	IsToRedraw = true;
@@ -430,6 +440,9 @@ extern "C" {
 
 void GScreenClass::Blit_Display(void)
 {
+#if defined(RA_LINUX)
+    if (NativeView_Present()) return;
+#endif
 	BStart(BENCH_BLIT_DISPLAY);
 	#ifdef WIN32
 		if (SeenBuff.Get_Width()!=320) {

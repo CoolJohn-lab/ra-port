@@ -9,6 +9,10 @@
  */
 
 #include	"function.h"
+#if defined(RA_LINUX)
+#include "native_game_view.h"
+#include "mac_sdl_runtime.h"
+#endif
 #include	"mac_sdl_runtime.h"
 #if defined(RA_MOBILE_TOUCH)
 #include	"mobile_rubber_band.h"
@@ -501,6 +505,14 @@ short const * DisplayClass::Text_Overlap_List(char const * text, int x, int y) c
  *=============================================================================================*/
 void DisplayClass::Set_View_Dimensions(int x, int y, int width, int height)
 {
+#if defined(RA_LINUX)
+    int pixel_width, pixel_height;
+    if (NativeView_Dimensions(x, y, pixel_width, pixel_height)) {
+        TacLeptonWidth = Pixel_To_Lepton(pixel_width);
+        TacLeptonHeight = Pixel_To_Lepton(pixel_height);
+    } else
+#endif
+    {
 	if (width == -1) {
 		TacLeptonWidth = Pixel_To_Lepton(SeenBuff.Get_Width()-x);
 	} else {
@@ -511,6 +523,7 @@ void DisplayClass::Set_View_Dimensions(int x, int y, int width, int height)
 		height = (SeenBuff.Get_Height()-y) / CELL_PIXEL_H;
 	}
 	TacLeptonHeight = height * CELL_LEPTON_H;
+    }
 
 	/*
 	**	Adjust the tactical cell if it is now in an invalid position
@@ -572,7 +585,12 @@ void DisplayClass::Set_Cursor_Shape(short const * list)
 		int	w,h;
 		static short _list[50];
 
-		memcpy(_list, list, sizeof(_list));
+		int count = 0;
+		while (count < (int)ARRAY_SIZE(_list)-1 && list[count] != REFRESH_EOL) {
+			_list[count] = list[count];
+			++count;
+		}
+		_list[count] = REFRESH_EOL;
 		CursorSize = _list;
 		Get_Occupy_Dimensions (w, h, CursorSize);
 		ZoneOffset = -(((h/2)*MAP_CELL_W)+(w/2));
@@ -2769,6 +2787,9 @@ int DisplayClass::TacticalClass::Action(unsigned flags, KeyNumType & key)
 		y = Get_Mouse_Y();
 	}
 	bool edge = (y == 0 || x == 0 || x == SeenBuff.Get_Width()-1 || y == SeenBuff.Get_Height()-1);
+#if defined(RA_LINUX)
+    if (NativeView_Active()) edge = NativeView_ScreenEdge();
+#endif
 	COORDINATE coord = Map.Pixel_To_Coord(x, y);
 	CELL cell = Coord_Cell(coord);
 	if (coord) {

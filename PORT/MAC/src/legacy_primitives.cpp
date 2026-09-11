@@ -1438,6 +1438,7 @@ extern "C" void *__cdecl ASM_Set_Mouse_Cursor(void *thisptr, int hotspotx, int h
 	mouse->MouseYHot = hotspoty;
 	mouse->CursorWidth = width;
 	mouse->CursorHeight = height;
+    MacSDL_NativeCursor((unsigned char const *)mouse->MouseCursor, width, height, hotspotx, hotspoty);
 	return previous;
 }
 

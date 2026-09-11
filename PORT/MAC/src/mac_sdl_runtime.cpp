@@ -31,6 +31,34 @@ static unsigned char MacToggleState[256];
 static POINT MacMousePoint = {0, 0};
 static bool MacUnmodifiedKeyDispatch = false;
 
+static bool NativeActive = false;
+static bool NativeControls = false;
+static bool NativeDragging = false;
+static bool NativeEffects = false;
+static RANativeLight NativeLights[32];
+static int NativeLightCount = 0;
+static unsigned char NativeMappedCells[128*128];
+static int NativeCameraX = 0, NativeCameraY = 0;
+static RANativeView NativeView;
+static int NativeZoom = 3;
+static double NativeWheelRemainder = 0;
+static double NativePanX = 0, NativePanY = 0;
+static int NativeAnchorX = -1, NativeAnchorY = -1;
+static SDL_Texture *NativeTexture = 0;
+static int NativeTextureW = 0, NativeTextureH = 0;
+static SDL_Texture *NativeCursorTexture = 0;
+static unsigned char NativeCursorPixels[48*48];
+static int NativeCursorW = 0, NativeCursorH = 0, NativeHotX = 0, NativeHotY = 0;
+static SDL_Rect NativeHelp = {0, 0, 0, 0};
+
+static void native_end_drag(void)
+{
+    NativeDragging = false;
+    NativePanX = NativePanY = 0;
+    SDL_CaptureMouse(SDL_FALSE);
+}
+
+
 #if defined(RA_MOBILE_TOUCH)
 extern bool InMovie;
 #endif
@@ -103,7 +131,11 @@ static bool mac_to_logical_point(int *x, int *y)
 	if (!x || !y || !MacWindow || MacWidth <= 0 || MacHeight <= 0) {
 		return false;
 	}
-	RAAspectViewport viewport = mac_window_viewport();
+	if (NativeActive) {
+        RA_ViewPoint(NativeView, *x, *y, x, y);
+        return *x >= 0 && *y >= 0;
+    }
+    RAAspectViewport viewport = mac_window_viewport();
 	return RA_MapViewportPoint(viewport, MacWidth, MacHeight, *x, *y, x, y) != 0;
 }
 
@@ -500,7 +532,7 @@ bool MacSDL_SetMode(int width, int height)
 #if defined(RA_MOBILE_TOUCH)
 		SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengles2");
 		SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
-#else
+#elif !defined(RA_LINUX)
 		SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
 #endif
 		SDL_SetHint(SDL_HINT_RENDER_LOGICAL_SIZE_MODE, "letterbox");
@@ -534,7 +566,12 @@ bool MacSDL_SetMode(int width, int height)
 		return true;
 	}
 
-	mac_destroy_video_objects();
+	if (NativeTexture) SDL_DestroyTexture(NativeTexture);
+    if (NativeCursorTexture) SDL_DestroyTexture(NativeCursorTexture);
+    NativeTexture = NativeCursorTexture = 0;
+    NativeTextureW = NativeTextureH = 0;
+    NativeActive = false;
+    mac_destroy_video_objects();
 	MacWidth = width;
 	MacHeight = height;
 
@@ -556,11 +593,16 @@ bool MacSDL_SetMode(int width, int height)
 		return false;
 	}
 
-	Uint32 renderer_flags = SDL_RENDERER_SOFTWARE;
+	#if !defined(RA_MOBILE_TOUCH)
+    SDL_SetWindowMinimumSize(MacWindow, 640, 400);
+#endif
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
+    Uint32 renderer_flags = SDL_RENDERER_ACCELERATED;
 #if defined(RA_MOBILE_TOUCH)
 	renderer_flags = SDL_RENDERER_ACCELERATED;
 #endif
 	MacRenderer = SDL_CreateRenderer(MacWindow, -1, renderer_flags);
+    if (!MacRenderer) MacRenderer = SDL_CreateRenderer(MacWindow, -1, SDL_RENDERER_SOFTWARE);
 	if (!MacRenderer) {
 		mac_destroy_video_objects();
 		return false;
@@ -577,6 +619,12 @@ bool MacSDL_SetMode(int width, int height)
 
 void MacSDL_Shutdown(void)
 {
+    native_end_drag();
+    if (NativeTexture) SDL_DestroyTexture(NativeTexture);
+    if (NativeCursorTexture) SDL_DestroyTexture(NativeCursorTexture);
+    NativeTexture = NativeCursorTexture = 0;
+    NativeTextureW = NativeTextureH = 0;
+    NativeActive = false;
 	if (MacFrame) {
 		free(MacFrame);
 		MacFrame = 0;
@@ -625,7 +673,43 @@ static void mac_sdl_pump_events(bool allow_idle_delay)
 				mac_queue_message((HWND)(intptr_t)1, WM_DESTROY, 0, 0);
 				break;
 
-			case SDL_MOUSEMOTION: {
+			case SDL_WINDOWEVENT:
+                if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+                    native_end_drag();
+                    // Release held legacy buttons too, so selection cannot stick.
+                    for (int vk = VK_LBUTTON; vk <= VK_MBUTTON; ++vk) {
+                        if (MacKeyState[vk]) mac_queue_mouse_button(vk, false, MacMousePoint.x, MacMousePoint.y);
+                    }
+                }
+                break;
+
+            case SDL_MOUSEWHEEL: {
+                int px, py; Uint32 buttons = SDL_GetMouseState(&px, &py);
+                double amount = event.wheel.y;
+#if SDL_VERSION_ATLEAST(2,0,18)
+                if (event.wheel.preciseY) amount = event.wheel.preciseY;
+#endif
+                if (NativeActive && NativeControls && !NativeDragging &&
+                    !(buttons & (SDL_BUTTON_LMASK | SDL_BUTTON_RMASK)) &&
+                    RA_ViewContainsWorld(NativeView, px, py) && amount) {
+                    if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) amount = -amount;
+                    NativeWheelRemainder += amount;
+                    int step = (int)NativeWheelRemainder;
+                    NativeWheelRemainder -= step;
+                    if (!step) break;
+                    NativeZoom += step;
+                    if (NativeZoom < 0) NativeZoom = 0;
+                    if (NativeZoom > 6) NativeZoom = 6;
+                    NativeAnchorX = px; NativeAnchorY = py;
+                } else NativeWheelRemainder = 0;
+                break;
+            }
+
+            case SDL_MOUSEMOTION: {
+                if (NativeDragging) {
+                    NativePanX -= event.motion.xrel / NativeView.zoom;
+                    NativePanY -= event.motion.yrel / NativeView.zoom;
+                }
 				int x = event.motion.x;
 				int y = event.motion.y;
 				mac_to_logical_point(&x, &y);
@@ -635,7 +719,29 @@ static void mac_sdl_pump_events(bool allow_idle_delay)
 
 			case SDL_MOUSEBUTTONDOWN:
 			case SDL_MOUSEBUTTONUP: {
-				int vk = mac_vk_from_button(event.button.button);
+				if (NativeActive && event.button.button == SDL_BUTTON_MIDDLE) {
+                    if (event.type == SDL_MOUSEBUTTONDOWN && NativeControls &&
+                        !(SDL_GetMouseState(0, 0) & (SDL_BUTTON_LMASK | SDL_BUTTON_RMASK)) &&
+                        RA_ViewContainsWorld(NativeView, event.button.x, event.button.y)) {
+                        NativeDragging = true;
+                        SDL_CaptureMouse(SDL_TRUE);
+                    } else if (event.type == SDL_MOUSEBUTTONUP) {
+                        NativeDragging = false;
+                        SDL_CaptureMouse(SDL_FALSE);
+                    }
+                    break;
+                }
+                if (NativeActive && event.button.button == SDL_BUTTON_LEFT &&
+                    event.button.y < 16 && event.button.x >= 160 && event.button.x < 320) {
+                    if (event.type == SDL_MOUSEBUTTONDOWN) {
+                        if (event.button.x < 240 && NativeControls) {
+                            NativeZoom = 3; NativeAnchorX = NativeAnchorY = -1;
+                        } else if (event.button.x >= 240) NativeEffects = !NativeEffects;
+                    }
+                    break;
+                }
+                if (NativeDragging) break;
+                int vk = mac_vk_from_button(event.button.button);
 				if (!vk) {
 					break;
 				}
@@ -775,6 +881,9 @@ void MacSDL_Present8(unsigned char const *pixels, int width, int height, int pit
 	}
 
 	mac_sdl_pump_events(false);
+    // Primary-surface palette/cursor updates must not replace the composed game.
+    if (NativeActive) return;
+    if (MacRenderer) SDL_RenderSetScale(MacRenderer, 1.0f, 1.0f);
 	if (!MacRenderer || !MacTexture) {
 		return;
 	}
@@ -885,4 +994,164 @@ extern "C" BOOL MacWin_GetCursorPos(LPPOINT point)
 		*point = MacMousePoint;
 	}
 	return TRUE;
+}
+
+bool MacSDL_NativeRequest(int map_w, int map_h, RANativeView *view,
+    double *pan_x, double *pan_y, int *anchor_x, int *anchor_y)
+{
+    if (!MacWindow || !MacRenderer || !view || map_w <= 0 || map_h <= 0) return false;
+    int w, h;
+    SDL_GetWindowSize(MacWindow, &w, &h);
+    if (w <= 0 || h <= 0 || (SDL_GetWindowFlags(MacWindow) & SDL_WINDOW_MINIMIZED)) return false;
+    *view = RA_MakeNativeView(w, h, map_w, map_h, NativeZoom);
+    *pan_x = NativePanX; *pan_y = NativePanY;
+    *anchor_x = NativeAnchorX; *anchor_y = NativeAnchorY;
+    NativePanX = NativePanY = 0;
+    NativeAnchorX = NativeAnchorY = -1;
+    return true;
+}
+
+void MacSDL_NativeCommit(RANativeView const *view, bool controls)
+{
+    NativeActive = view != 0;
+    NativeControls = NativeActive && controls;
+    if (view) NativeView = *view;
+    else { NativeHelp.w = 0; NativeWheelRemainder = 0; }
+    if (!NativeControls) native_end_drag();
+    int x, y;
+    SDL_GetMouseState(&x, &y);
+    mac_to_logical_point(&x, &y);
+    MacMousePoint.x = x; MacMousePoint.y = y;
+}
+
+bool MacSDL_NativeDragging(void) { return NativeDragging; }
+bool MacSDL_NativeEffects(void) { return NativeEffects; }
+void MacSDL_NativePointer(int *x, int *y) { SDL_GetMouseState(x, y); }
+
+void MacSDL_NativeCursor(unsigned char const *pixels, int w, int h, int hot_x, int hot_y)
+{
+    if (!pixels || w < 1 || h < 1 || w > 48 || h > 48) return;
+    memcpy(NativeCursorPixels, pixels, w*h);
+    NativeCursorW = w; NativeCursorH = h;
+    NativeHotX = hot_x; NativeHotY = hot_y;
+}
+
+static void native_copy(SDL_Rect source, SDL_Rect dest)
+{
+    SDL_RenderCopy(MacRenderer, NativeTexture, &source, &dest);
+}
+
+bool MacSDL_NativePresent(unsigned char const *pixels, int width, int height, int pitch)
+{
+    if (!NativeActive || !pixels || !MacRenderer || width <= 0 || height <= 0) return false;
+    if (!NativeTexture || width != NativeTextureW || height != NativeTextureH) {
+        SDL_Texture *replacement = SDL_CreateTexture(MacRenderer, SDL_PIXELFORMAT_ARGB8888,
+            SDL_TEXTUREACCESS_STREAMING, width, height);
+        if (!replacement) { SDL_Log("Native view texture: %s", SDL_GetError()); return false; }
+        if (NativeTexture) SDL_DestroyTexture(NativeTexture);
+        NativeTexture = replacement; NativeTextureW = width; NativeTextureH = height;
+    }
+    int needed = width * height;
+    if (needed > MacFramePixels) {
+        uint32_t *replacement = (uint32_t *)realloc(MacFrame, needed * sizeof(uint32_t));
+        if (!replacement) return false;
+        MacFrame = replacement; MacFramePixels = needed;
+    }
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x)
+            MacFrame[y*width+x] = MacPalette[pixels[y*pitch+x]];
+    // Multiplicative light preserves black shroud pixels and palette fades.
+    // Both emitter and receiving cell visibility are checked by the game bridge.
+    if (NativeEffects) for (int i = 0; i < NativeLightCount; ++i) {
+        RANativeLight const &light = NativeLights[i];
+        int r2 = light.radius*light.radius;
+        if (r2 <= 0) continue;
+        int left = light.x-light.radius, right = light.x+light.radius;
+        int top = light.y-light.radius, bottom = light.y+light.radius;
+        if (left < 0) left = 0;
+        if (top < 0) top = 0;
+        if (right >= NativeView.world_w) right = NativeView.world_w-1;
+        if (bottom >= NativeView.world_h) bottom = NativeView.world_h-1;
+        for (int y = top; y <= bottom; ++y) for (int x = left; x <= right; ++x) {
+            int cx = (NativeCameraX+x)/24, cy = (NativeCameraY+y)/24;
+            if (cx < 0 || cy < 0 || cx >= 128 || cy >= 128 || !NativeMappedCells[cy*128+cx]) continue;
+            int dx=x-light.x, dy=y-light.y;
+            int distance=dx*dx+dy*dy;
+            if (distance >= r2) continue;
+            int power=(r2-distance)*light.strength/r2;
+            uint32_t &pixel=MacFrame[(y+RA_WORLD_Y)*width+x+RA_WORLD_X];
+            int red=(pixel>>16)&255, green=(pixel>>8)&255, blue=pixel&255;
+            red += red*power*light.red/65536;
+            green += green*power*light.green/65536;
+            blue += blue*power*light.blue/65536;
+            pixel=mac_argb(red>255?255:red, green>255?255:green, blue>255?255:blue);
+        }
+    }
+    SDL_UpdateTexture(NativeTexture, 0, MacFrame, width * sizeof(uint32_t));
+    int out_w, out_h;
+    SDL_GetRendererOutputSize(MacRenderer, &out_w, &out_h);
+    SDL_RenderSetScale(MacRenderer, (float)out_w/NativeView.output_w, (float)out_h/NativeView.output_h);
+    SDL_SetRenderDrawColor(MacRenderer, 0, 0, 0, 255);
+    SDL_RenderClear(MacRenderer);
+    SDL_Rect clip = {0, 16, NativeView.output_w - 160, NativeView.output_h - 16};
+    SDL_RenderSetClipRect(MacRenderer, &clip);
+    SDL_Rect world_src = {RA_WORLD_X, RA_WORLD_Y, NativeView.world_w, NativeView.world_h};
+    SDL_Rect world_dst = {NativeView.dest_x, NativeView.dest_y, NativeView.dest_w, NativeView.dest_h};
+    native_copy(world_src, world_dst);
+    SDL_RenderSetClipRect(MacRenderer, 0);
+    // Extend the sidebar's bottom border without stretching the build controls.
+    SDL_Rect fill_src = {480, 200, 2, 184};
+    SDL_Rect fill_dst = {NativeView.output_w-160, 400, 2, NativeView.output_h-400};
+    if (fill_dst.h > 0) native_copy(fill_src, fill_dst);
+    SDL_Rect side_src = {480, 16, 160, 384};
+    SDL_Rect side_dst = {NativeView.output_w-160, 16, 160, 384};
+    native_copy(side_src, side_dst);
+    SDL_Rect left_src = {0, 0, 320, 16}, left_dst = {0, 0, 320, 16};
+    native_copy(left_src, left_dst);
+    SDL_Rect right_src = {320, 0, 320, 16};
+    SDL_Rect right_dst = {NativeView.output_w-320, 0, 320, 16};
+    native_copy(right_src, right_dst);
+    if (NativeHelp.w > 0 && NativeHelp.h > 0) {
+        SDL_Rect help_dst = NativeHelp;
+        help_dst.x += NativeView.output_w-640;
+        native_copy(NativeHelp, help_dst);
+    }
+    if (NativeCursorW && SDL_GetMouseFocus() == MacWindow) {
+        if (!NativeCursorTexture) {
+            NativeCursorTexture = SDL_CreateTexture(MacRenderer, SDL_PIXELFORMAT_ARGB8888,
+                SDL_TEXTUREACCESS_STREAMING, 48, 48);
+            if (NativeCursorTexture) SDL_SetTextureBlendMode(NativeCursorTexture, SDL_BLENDMODE_BLEND);
+        }
+        if (NativeCursorTexture) {
+            uint32_t cursor[48*48];
+            memset(cursor, 0, sizeof(cursor));
+            for (int y = 0; y < NativeCursorH; ++y)
+                for (int x = 0; x < NativeCursorW; ++x) {
+                    unsigned char color = NativeCursorPixels[y*NativeCursorW+x];
+                    if (color) cursor[y*48+x] = MacPalette[color];
+                }
+            SDL_UpdateTexture(NativeCursorTexture, 0, cursor, 48*sizeof(uint32_t));
+            int x, y; SDL_GetMouseState(&x, &y);
+            SDL_Rect dst = {x-NativeHotX, y-NativeHotY, 48, 48};
+            SDL_RenderCopy(MacRenderer, NativeCursorTexture, 0, &dst);
+        }
+    }
+    SDL_RenderPresent(MacRenderer);
+    return true;
+}
+
+void MacSDL_NativeHelp(int x, int y, int w, int h)
+{
+    NativeHelp.x=x; NativeHelp.y=y; NativeHelp.w=w; NativeHelp.h=h;
+}
+
+void MacSDL_NativeLights(RANativeLight const *lights, int count,
+    unsigned char const *mapped_cells, int camera_x, int camera_y)
+{
+    NativeLightCount = count < 0 ? 0 : (count > 32 ? 32 : count);
+    if (NativeLightCount && lights) memcpy(NativeLights, lights, NativeLightCount*sizeof(RANativeLight));
+    else NativeLightCount = 0;
+    if (mapped_cells) memcpy(NativeMappedCells, mapped_cells, sizeof(NativeMappedCells));
+    else memset(NativeMappedCells, 0, sizeof(NativeMappedCells));
+    NativeCameraX = camera_x; NativeCameraY = camera_y;
 }

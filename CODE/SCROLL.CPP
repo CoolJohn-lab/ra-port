@@ -9,6 +9,10 @@
  */
 
 #include	"function.h"
+#if defined(RA_LINUX)
+#include "native_game_view.h"
+#include "mac_sdl_runtime.h"
+#endif
 
 #ifdef WIN32
 #define	SCROLL_DELAY	1
@@ -62,6 +66,15 @@ ScrollClass::ScrollClass(void) :
 #define	EVA_WIDTH		80
 void ScrollClass::AI(KeyNumType &input, int x, int y)
 {
+#if defined(RA_LINUX)
+    int original_x = x, original_y = y;
+    if (NativeView_Active() && MacSDL_NativeDragging()) {
+        Inertia = 0;
+        HelpClass::AI(input, x, y);
+        return;
+    }
+    NativeView_ScrollPoint(x, y);
+#endif
 	bool		player_scrolled=false;
 	static 	DirType	direction;
 	static unsigned long last_scroll_tick = 0xffffffffUL;
@@ -205,6 +218,9 @@ void ScrollClass::AI(KeyNumType &input, int x, int y)
 		}
 	}
 
+#if defined(RA_LINUX)
+    x = original_x; y = original_y;
+#endif
 	HelpClass::AI(input, x, y);
 }
 

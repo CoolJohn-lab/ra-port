@@ -30,6 +30,7 @@ if(APPLE)
 elseif(UNIX)
     add_executable(redalert_linux
         PORT/MAC/src/main.cpp
+        PORT/MAC/src/native_game_view.cpp
         ${RA95_PLATFORM_SDL_SOURCES}
         ${RA95_SOURCES}
         ${RA95_SUPPORT_SOURCES}
